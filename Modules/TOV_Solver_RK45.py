@@ -69,22 +69,25 @@ class TovSolverRK45:
                              )
         return solution
     
-    def ns_vol_avg(self,q_interp ,p_central ,r_stop, dr = 0.001, rmax=30, dr_max = 0.01):
-        sol = self.solve(p_central,dr,rmax,dr_max)
+    def ns_vol_avg(self,q_interp, r_stop ,solution=None, nu_sol = None, p_central=1.0, dr = 0.001, rmax=30, dr_max = 0.01):
+        if solution is not None:
+            sol = solution
+            nu = nu_sol
+        else:
+            sol,nu = self.solve_nu(p_central,dr,rmax)
         M_r = sol.y[1,:]
-        P_r = sol.y[0,:]
-        e_r = self.eos(P_r)
         rad = sol.t
 
-        M_r_interp = interp1d(rad,M_r)
+        M_r_interp = interp1d(rad,M_r,fill_value='extrapolate')
+        nu_r_interp = interp1d(rad,nu,fill_value='extrapolate')
 
         def vol_integrand(r):
-            return 4*np.pi*r**(2)*(1 - 2*R0*M_r_interp(r)/r)**(-1/2)
+            return 4*np.pi*r**(2)*(1 - 2*R0*M_r_interp(r)/r)**(-1/2)*np.exp(nu_r_interp(r))
         def vol_avg_integrand(r):
             return q_interp(r)*vol_integrand(r)
         
-        Vol = quad(vol_integrand,a=0,b=r_stop)[0]
-        Vol_avg_integral = quad(vol_avg_integrand,a=0,b=r_stop)[0]
+        Vol = quad(vol_integrand,a=1e-4,b=r_stop)[0]
+        Vol_avg_integral = quad(vol_avg_integrand,a=1e-4,b=r_stop)[0]
         return Vol_avg_integral/Vol
     
     def ns_mass_grav_avg(self,q_interp,p_central,r_stop,dr=0.001,rmax=30,dr_max=0.01):
@@ -102,8 +105,8 @@ class TovSolverRK45:
         def mass_avg_integrand(r):
             return q_interp(r)*mass_integrand(r)
         
-        Mg = quad(mass_integrand,a=0,b=r_stop)[0]
-        Mass_avg_integral = quad(mass_avg_integrand,a=0,b=r_stop)[0]
+        Mg = quad(mass_integrand,a=1e-4,b=r_stop)[0]
+        Mass_avg_integral = quad(mass_avg_integrand,a=1e-4,b=r_stop)[0]
 
         return Mass_avg_integral/Mg
 

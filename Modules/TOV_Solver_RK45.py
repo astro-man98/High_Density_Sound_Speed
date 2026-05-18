@@ -69,26 +69,27 @@ class TovSolverRK45:
                              )
         return solution
     
-    def ns_vol_avg(self,q_interp ,p_central ,r_stop, dr = 0.001, rmax=30, dr_max = 0.01):
-        sol = self.solve(p_central,dr,rmax,dr_max)
+    def ns_vol_avg(self,q_interp,r_stop,dr = 0.001, rmax=30,solution=None,nu_sol=None,p_central=None):
+        if solution is not None:
+            sol,nu = solution,nu_sol
+        else:
+            sol,nu = self.solve_nu(p_central,dr,rmax,rmax)
         M_r = sol.y[1,:]
-        P_r = sol.y[0,:]
-        e_r = self.eos(P_r)
         rad = sol.t
 
         M_r_interp = interp1d(rad,M_r)
-
+        nu_r_interp = interp1d(rad,nu)
         def vol_integrand(r):
-            return 4*np.pi*r**(2)*(1 - 2*R0*M_r_interp(r)/r)**(-1/2)
+            return 4*np.pi*r**(2)*(1 - 2*R0*M_r_interp(r)/r)**(-1/2)*np.exp(nu_r_interp(r))
         def vol_avg_integrand(r):
             return q_interp(r)*vol_integrand(r)
         
-        Vol = quad(vol_integrand,a=0,b=r_stop)[0]
-        Vol_avg_integral = quad(vol_avg_integrand,a=0,b=r_stop)[0]
+        Vol = quad(vol_integrand,a=0.001,b=r_stop)[0]
+        Vol_avg_integral = quad(vol_avg_integrand,a=0.001,b=r_stop)[0]
         return Vol_avg_integral/Vol
     
     def ns_mass_grav_avg(self,q_interp,p_central,r_stop,dr=0.001,rmax=30,dr_max=0.01):
-        sol = self.solve(p_central,dr,rmax,dr_max)
+        sol,nu = self.solve_nu(p_central,dr,rmax,dr_max=0.01)
         M_r = sol.y[1,:]
         P_r = sol.y[0,:]
         e_r = self.eos(P_r)
@@ -97,7 +98,7 @@ class TovSolverRK45:
         P_r_interp = interp1d(rad,P_r)
 
         def mass_integrand(r):
-            return 4*np.pi*(r**2)*P_r_interp(r)
+            return 4*np.pi*(r**2)*P_r_interp(r)*np.exp(nu)
         
         def mass_avg_integrand(r):
             return q_interp(r)*mass_integrand(r)

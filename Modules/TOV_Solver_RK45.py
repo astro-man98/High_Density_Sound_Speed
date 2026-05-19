@@ -3,7 +3,12 @@ from scipy.interpolate import interp1d
 from scipy.integrate import quad
 import numpy as np
 from matplotlib import pyplot as plt
+import Modules.unitconv as units
+
 R0 = 1.476
+density_conversion = 10**54
+MeVFm3_SI = units.MEV_SI/(units.FM_SI**3)
+M_sol_geom = 1477.7
 
 
 class TovSolverRK45:
@@ -68,7 +73,48 @@ class TovSolverRK45:
                              max_step=dr_max
                              )
         return solution
-    
+    def LoveTwoFluid(self,r,y,solution):
+        geom_units = units.geom_ulength(1)
+
+
+        p = solution(r/1000)[0]*self.scale_e*MeVFm3_SI/geom_units.pressure
+        m = solution(r/1000)[1]*M_sol_geom
+
+        rho = self.eos(p*geom_units.pressure/(self.scale_e*MeVFm3_SI))*self.scale_e*MeVFm3_SI/geom_units.edens
+
+
+        dpdrho = self.dpdhro((p*geom_units.pressure)/(self.scale_e*MeVFm3_SI))
+
+        if dpdrho == 0:
+            k = 0
+        else: k = 1
+
+        p_g = p*MeVFm3_SI/geom_units.pressure
+
+        dydr = -1*((1 - (2*m)/r)*y**2 + y*(1 + (4*np.pi*r**2)*(rho- p_g)))*(1/(r - 2*m)) - \
+                4*np.pi*r*(1/(1 - (2*m)/r))*(5*rho + 9*p_g + k*(p_g + rho)/dpdrho) + \
+                6*(1/(r - 2*m)) + r*(2*(1/(1 - (2*m)/r))*(m + 4*np.pi*p_g*(r**3))/(r**2))**2
+
+        return dydr
+
+    def solve_tidal(self,p1_central,dr_initial=0.001,r_max = 30):
+        background_sol = self.solve(p1_central,dr_initial,r_max,dr_max = 0.01)
+        back_sol = background_sol.sol
+        R = background_sol.t[-1]*1000
+        M = background_sol.y[1][-1]
+        beta = M*M_sol_geom/R
+
+        y_initial = self.LoveTwoFluid(dr_initial*1000,2,back_sol)*dr_initial*1000 + 2
+
+        solution = solve_ivp(self.LoveTwoFluid,(dr_initial*1000,background_sol.t[-1]*1000),[y_initial],method='RK45',
+                               dense_output=True, args=(back_sol,),max_step=10)
+        y_R = solution.y[0][-1]
+
+        k_2 = (8.0/5.0)*(beta**5)*((1 - 2*beta)**2)*(2 - y_R + 2*beta*(y_R - 1))* \
+              ((2*beta*(6 - 3*y_R + 3*beta*(5*y_R - 8))) + 4*(beta**3)*(13 - 11*y_R + beta*(3*y_R - 2) + 2*(beta**2)*(1 + y_R)) + \
+              3*((1 - 2*beta)**2)*(2 - y_R + 2*beta*(y_R - 1))*np.log(1 - 2*beta))**(-1.0)
+        lambda_tid = ((2.0/3.0)*k_2*(R**5)/((M*M_sol_geom)**5))
+        return lambda_tid,k_2
     def ns_vol_avg(self,q_interp, r_stop ,solution=None, nu_sol = None, p_central=1.0, dr = 0.001, rmax=30, dr_max = 0.01):
         if solution is not None:
             sol = solution

@@ -24,13 +24,14 @@ class TovSolverRK45:
     bary_density:
         Interpolating polynomial for the ordinary baryon density nb(p)
     """
-    def __init__(self, epsilon, eos, bary_density):
+    def __init__(self, epsilon, eos, bary_density, dpde):
         self.scale_e = epsilon
         self.eos = eos
         self.bary_density = bary_density
 
         self.epsilon_sol = self.scale_e * 8.9495 * 10 ** (-7)
         self.beta_sol = 4 * np.pi * self.epsilon_sol
+        self.dpdrho = dpde
 
     def solve(self,p_central, dr, rmax, dr_max):
         p1 = p_central
@@ -83,7 +84,7 @@ class TovSolverRK45:
         rho = self.eos(p*geom_units.pressure/(self.scale_e*MeVFm3_SI))*self.scale_e*MeVFm3_SI/geom_units.edens
 
 
-        dpdrho = self.dpdhro((p*geom_units.pressure)/(self.scale_e*MeVFm3_SI))
+        dpdrho = self.dpdrho((p*geom_units.pressure)/(self.scale_e*MeVFm3_SI))
 
         if dpdrho == 0:
             k = 0

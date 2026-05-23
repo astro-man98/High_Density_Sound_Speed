@@ -1,0 +1,3 @@
+[submodule "PyCompose"]
+	path = PyCompose
+	url = https://github.com/computationalrelativity/PyCompOSE.git

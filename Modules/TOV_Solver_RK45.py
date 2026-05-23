@@ -1,9 +1,10 @@
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
-from scipy.integrate import quad
+from scipy.integrate import quad,cumulative_trapezoid
 import numpy as np
 from matplotlib import pyplot as plt
 import Modules.unitconv as units
+from scipy.interpolate import PchipInterpolator,interp1d
 
 R0 = 1.476
 density_conversion = 10**54
@@ -116,27 +117,21 @@ class TovSolverRK45:
               3*((1 - 2*beta)**2)*(2 - y_R + 2*beta*(y_R - 1))*np.log(1 - 2*beta))**(-1.0)
         lambda_tid = ((2.0/3.0)*k_2*(R**5)/((M*M_sol_geom)**5))
         return lambda_tid,k_2
-    def ns_vol_avg(self,q_interp, r_stop ,solution=None, nu_sol = None, p_central=1.0, dr = 0.001, rmax=30, dr_max = 0.01):
-        if solution is not None:
-            sol = solution
-            nu = nu_sol
-        else:
-            sol,nu = self.solve_nu(p_central,dr,rmax)
-        M_r = sol.y[1,:]
-        rad = sol.t
-
-        M_r_interp = interp1d(rad,M_r,fill_value='extrapolate')
-        nu_r_interp = interp1d(rad,nu,fill_value='extrapolate')
-
-        def vol_integrand(r):
-            return 4*np.pi*r**(2)*(1 - 2*R0*M_r_interp(r)/r)**(-1/2)*np.exp(nu_r_interp(r))
-        def vol_avg_integrand(r):
-            return q_interp(r)*vol_integrand(r)
-        
-        Vol = quad(vol_integrand,a=1e-3,b=r_stop)[0]
-        Vol_avg_integral = quad(vol_avg_integrand,a=1e-3,b=r_stop)[0]
-        return Vol_avg_integral/Vol
     
+
+    def ns_vol_avg(self,q_grid, r_grid, M_grid ,solution=None, nu_sol = None, p_central=1.0, dr = 0.001, rmax=30, dr_max = 0.01):
+
+        M_r = M_grid*R0
+
+        vol_integrand_r = 4*np.pi*r_grid**(2)*(1 - 2*M_r/r_grid)**(-1/2)*np.exp(nu_sol)
+        vol_avg_integrand_r = q_grid*vol_integrand_r
+        
+        Vol = cumulative_trapezoid(vol_integrand_r,r_grid)
+        Vol_avg_integral = cumulative_trapezoid(vol_avg_integrand_r,r_grid)
+        return Vol,Vol_avg_integral/Vol
+    
+
+
     def ns_mass_grav_avg(self,q_interp,p_central,r_stop,dr=0.001,rmax=30,dr_max=0.01):
         sol,nu = self.solve_nu(p_central,dr,rmax,dr_max=0.01)
         P_r = sol.y[0,:]
@@ -158,29 +153,31 @@ class TovSolverRK45:
     def solve_nu(self,p_c,dr=0.01,r_max=30):
         sol = self.solve(p_c,dr,r_max,dr_max=0.01)
         e_c = self.eos(p_c)
-        radii = sol.t
-        R = radii[-1]
-        M = sol.y[1][-1]
+        rad = sol.t
 
-        def integrand(r):
-            m = sol.sol(r)[1]
-            p = sol.sol(r)[0]
-            return (m/r**2)*((1 + (self.beta_sol*r**3)*(p/m))/(1 - (2*R0/r)*m))
+        R = rad[-1]
+        M = sol.y[1][-1]*R0
 
-        nu_surf = 0.5*np.log(1 - (2*R0/R)*M)
+        nu_surf = 0.5*np.log(1 - (2*M)/R)
+        nu = np.empty_like(rad)
 
-        nu_central = nu_surf + (1/(6*e_c))*(1 + 3*(p_c/e_c))*np.log(1 - self.beta_sol*(2*R0)*(dr**2)*e_c) - \
-                     R0*quad(integrand,dr,R)[0]
+        m_r = sol.y[1,:]*R0
+        p_r = sol.y[0,:]
+        eps_r = self.eos(p_r)
+        
+        dpdr_r = np.gradient(p_r,rad)
+        
+        #plt.plot(sol.t,dpdr_r)
 
-        nu = np.empty_like(radii)
+        integrand_r = -1*(1.0/(eps_r + p_r))*dpdr_r
 
-        for i,r in enumerate(radii):
-            if r == 0:
-                nu[i] = nu_central
-            else:
-                nu[i] = nu_surf - R0*quad(integrand,r,R)[0]
+        integral = cumulative_trapezoid(integrand_r,rad)
+        idx_stop = np.argmax(integral) - 1
 
-        return sol, nu
+        C = nu_surf - integral[idx_stop]
+        print(nu_surf,integral[idx_stop] + C)
+        return sol,integral[:idx_stop] + C,np.argmax(integral)
+
 
 
 
